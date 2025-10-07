@@ -102,31 +102,9 @@ npm run dev
 Откройте браузер и перейдите по адресу, который покажет терминал (обычно http://localhost:5173). Вы увидите базовую страницу React — это наш стартовый проект.
 
 
-### Подключение shadcn
-shadCN предоставляет готовые компоненты, которые можно использовать сразу в интерфейсе, например кнопки, карточки и формы.
-
-[подключение shadcn](https://ui.shadcn.com/docs/installation/vite)
-
-Пример использования кнопки:
-
-```bash
-npx shadcn@latest add button
-```
-
-```jsx
-import { ArrowUpIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
-export function ButtonDemo() {
-  return (
-    <div className="flex flex-wrap items-center gap-2 md:flex-row">
-      <Button variant="outline">Button</Button>
-      <Button variant="outline" size="icon" aria-label="Submit">
-        <ArrowUpIcon />
-      </Button>
-    </div>
-  )
-}
-```
+### Подключение Ant Design
+antd предоставляет готовые компоненты, которые можно использовать сразу в интерфейсе, например кнопки, карточки и формы.
+[Документация Ant Design](https://ant.design/docs/react/introduce)
 
 # Реализация TodoList
 
@@ -138,13 +116,24 @@ export function ButtonDemo() {
 - `AddTodo.tsx` — форма для добавления новой задачи.
 - `TodoList.tsx` — список задач с возможностью редактирования и удаления.
 
+Также создадим файл `types.ts` для описания типов данных.
+
+```ts
+export interface Todo {
+  id: number
+  title: string
+  description?: string
+  completed: boolean
+}
+```
+
 Также создадим файл `api.ts` для работы с API.
 
 ### api.ts — работа с бэкендом
 ```ts
 import { Todo } from "./types"
 
-const BASE_URL = "https://your-backend-url" // замените на адрес вашего бэкенда
+const BASE_URL = "https://your-backend-url"
 
 export const getTodos = async (): Promise<Todo[]> => {
   const res = await fetch(`${BASE_URL}/todos/`)
@@ -178,7 +167,7 @@ export const deleteTodo = async (id: number): Promise<void> => {
 ### Компонент AddTodo.tsx
 ```ts
 import { useState, FormEvent } from "react"
-import { Input, Button } from "@shadcn/ui"
+import { Input, Button, Form } from "antd"
 import { Todo } from "../types"
 
 interface AddTodoProps {
@@ -201,15 +190,20 @@ export default function AddTodo({ onAdd }: AddTodoProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2 mt-4">
-      <Input
-        placeholder="Введите задачу..."
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        className="flex-1"
-      />
-      <Button type="submit">Добавить</Button>
-    </form>
+    <Form layout="inline" onSubmitCapture={handleSubmit} style={{ marginTop: 16 }}>
+      <Form.Item style={{ flex: 1 }}>
+        <Input
+          placeholder="Введите задачу"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </Form.Item>
+      <Form.Item>
+        <Button type="primary" htmlType="submit">
+          Добавить
+        </Button>
+      </Form.Item>
+    </Form>
   )
 }
 ```
@@ -217,7 +211,8 @@ export default function AddTodo({ onAdd }: AddTodoProps) {
 ### Компонент TodoList.tsx
 
 ```ts
-import { Button, Checkbox } from "@shadcn/ui"
+import { List, Button, Checkbox, Typography, Space } from "antd"
+import { DeleteOutlined } from "@ant-design/icons"
 import { Todo } from "../types"
 
 interface TodoListProps {
@@ -227,36 +222,37 @@ interface TodoListProps {
 }
 
 export default function TodoList({ todos, onDelete, onToggle }: TodoListProps) {
-  if (todos.length === 0) {
-    return <p className="text-gray-500 mt-4">Задач пока нет</p>
-  }
-
   return (
-    <ul className="mt-4 space-y-2">
-      {todos.map((todo) => (
-        <li
-          key={todo.id}
-          className="flex items-center justify-between bg-white rounded-lg p-3 shadow"
+    <List
+      style={{ marginTop: 16 }}
+      dataSource={todos}
+      locale={{ emptyText: "Задач пока нет" }}
+      renderItem={(todo) => (
+        <List.Item
+          actions={[
+            <Button
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => onDelete(todo.id)}
+            />,
+          ]}
         >
-          <div className="flex items-center gap-2">
+          <Space>
             <Checkbox
               checked={todo.completed}
-              onCheckedChange={() => onToggle(todo)}
+              onChange={() => onToggle(todo)}
             />
-            <span
-              className={`${
-                todo.completed ? "line-through text-gray-400" : ""
-              }`}
+            <Typography.Text
+              delete={todo.completed}
+              style={{ opacity: todo.completed ? 0.5 : 1 }}
             >
               {todo.title}
-            </span>
-          </div>
-          <Button variant="destructive" size="sm" onClick={() => onDelete(todo.id)}>
-            Удалить
-          </Button>
-        </li>
-      ))}
-    </ul>
+            </Typography.Text>
+          </Space>
+        </List.Item>
+      )}
+    />
   )
 }
 ```
@@ -265,58 +261,77 @@ export default function TodoList({ todos, onDelete, onToggle }: TodoListProps) {
 
 ```ts
 import { useEffect, useState } from "react"
+import { Card, Typography, message } from "antd"
 import AddTodo from "./components/AddTodo"
 import TodoList from "./components/TodoList"
 import { getTodos, createTodo, deleteTodo, updateTodo } from "./api"
 import { Todo } from "./types"
-import { Card, CardHeader, CardContent } from "@shadcn/ui"
+
+const { Title } = Typography
 
 function App() {
   const [todos, setTodos] = useState<Todo[]>([])
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     loadTodos()
   }, [])
 
   const loadTodos = async () => {
-    const data = await getTodos()
-    setTodos(data)
+    setLoading(true)
+    try {
+      const data = await getTodos()
+      setTodos(data)
+    } catch (error) {
+      message.error("Ошибка при загрузке задач")
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleAdd = async (todo: Todo) => {
-    const newTodo = await createTodo(todo)
-    setTodos((prev) => [...prev, newTodo])
+    try {
+      const newTodo = await createTodo(todo)
+      setTodos((prev) => [...prev, newTodo])
+      message.success("Задача добавлена")
+    } catch {
+      message.error("Не удалось добавить задачу")
+    }
   }
 
   const handleDelete = async (id: number) => {
-    await deleteTodo(id)
-    setTodos((prev) => prev.filter((t) => t.id !== id))
+    try {
+      await deleteTodo(id)
+      setTodos((prev) => prev.filter((t) => t.id !== id))
+      message.success("Задача удалена")
+    } catch {
+      message.error("Ошибка при удалении")
+    }
   }
 
   const handleToggle = async (todo: Todo) => {
     const updated = { ...todo, completed: !todo.completed }
-    await updateTodo(updated)
-    setTodos((prev) =>
-      prev.map((t) => (t.id === todo.id ? updated : t))
-    )
+    try {
+      await updateTodo(updated)
+      setTodos((prev) => prev.map((t) => (t.id === todo.id ? updated : t)))
+    } catch {
+      message.error("Ошибка при обновлении")
+    }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
-      <Card className="w-full max-w-md p-4">
-        <CardHeader>
-          <h1 className="text-2xl font-semibold text-center">Todo List</h1>
-        </CardHeader>
-        <CardContent>
-          <AddTodo onAdd={handleAdd} />
-          <TodoList todos={todos} onDelete={handleDelete} onToggle={handleToggle} />
-        </CardContent>
+    <div style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center", background: "#f5f5f5", padding: 24 }}>
+      <Card style={{ width: 400 }}>
+        <Title level={3} style={{ textAlign: "center" }}>
+          Todo List
+        </Title>
+        <AddTodo onAdd={handleAdd} />
+        <TodoList todos={todos} onDelete={handleDelete} onToggle={handleToggle} />
       </Card>
     </div>
   )
 }
 
 export default App
-
 ```
 
